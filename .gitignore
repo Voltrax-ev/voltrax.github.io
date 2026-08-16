@@ -1,0 +1,4 @@
+# Windows/WSL cruft
+*:Zone.Identifier
+Thumbs.db
+.DS_Store

@@ -205,6 +205,14 @@ h1, h2, h3, h4 { font-family: var(--font-display); font-weight: 700; line-height
 .brand img { width: 40px; height: 40px; border-radius: 50%; box-shadow: var(--shadow-sm); }
 .brand b { font-weight: 800; }
 .brand span { color: var(--red); }
+/* header wordmark: image-only lockup — fluid width, ratio locked, never overflows */
+.brand--mark { gap: 0; flex: 0 1 auto; min-width: 0; width: clamp(80px, 10.8vw, 108px); }
+.brand--mark img {
+  display: block; width: 100%; height: auto;
+  border-radius: 0; box-shadow: none;
+  transition: transform .3s var(--ease);
+}
+.brand--mark:hover img { transform: scale(1.03); }
 .nav-links { display: flex; align-items: center; gap: 4px; }
 .nav-links a {
   padding: .55rem .95rem; border-radius: var(--r-pill); font-weight: 600; font-size: .96rem; color: var(--ink-soft);

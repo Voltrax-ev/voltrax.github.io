@@ -6,7 +6,6 @@ window.VOLTRAX = window.VOLTRAX || {};
 
 window.VOLTRAX.i18n = {
   /* ---- chrome ---- */
-  "brand.perf":        { en: "Performance EV", es: "Performance EV" },
   "nav.home":          { en: "Home", es: "Inicio" },
   "nav.bikes":         { en: "Bikes", es: "Motos" },
   "nav.parts":         { en: "Parts", es: "Repuestos" },
