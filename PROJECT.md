@@ -20,6 +20,7 @@ index.html          Home: hero, quicknav, featured bikes, showroom, why/advantag
                     parts teaser, import CTA, contact form, footer, onboarding popup
 bikes.html          Full inventory + filter bar + bike detail modal
 parts.html          Parts & accessories catalog + part detail modal
+assets/fonts/           Self-hosted Sora + Manrope variable woff2 (Latin)
 assets/css/styles.css   Single stylesheet (design tokens, layout, components, dark theme)
 assets/js/data.js       Content database: bikes, parts, showroom, brands, spec labels
 assets/js/i18n.js       ES/EN dictionary + runtime translator
@@ -58,20 +59,42 @@ is marked `data-i18n="key"` (text) or `data-i18n-attr="attr:key"` (attributes)
 and resolved from the dictionary in `i18n.js`. Data-driven strings use
 `{en, es}` objects resolved via `i18nApi.pick()`. `setLang()` persists to
 `localStorage["voltrax-lang"]`, updates `<html lang>`, and fires a
-`voltrax:lang` event so dynamic sections re-render.
+`voltrax:lang` event so dynamic sections re-render. The HTML fallback text
+inside every `data-i18n` node (and every `data-i18n-attr` value) is the Spanish
+string, so the page reads correctly before or without JS; keep it in sync when
+editing copy.
 
-**Theming.** Light by default; dark via `<html data-theme="dark">`. All colors
+**Theming.** Light by default, or dark when the OS prefers it and no choice is
+stored; dark via `<html data-theme="dark">`, which also sets `color-scheme` so
+native controls follow. Brand red has two roles: `--red` fills
+buttons, `--red-text` is for red text, icons and focus rings (lifted to
+`#EC5B60` in dark so it stays ≥4.5:1). Import/special-order uses the
+`--gold` / `--gold-soft` / `--gold-text` trio. Every text token clears 4.5:1 on
+the page surfaces in both themes; check new pairs before adding one. All colors
 come from CSS custom properties in `:root`, redefined in the
 `[data-theme="dark"]` block — never hardcode a color in a component rule. An
 inline script in `<head>` applies the stored theme and language *before* first
 paint to avoid a flash.
 
 **app.js modules** (each an `init*`/`render*` function called from `boot()`):
-header scroll state + mobile nav, scroll reveal (IntersectionObserver), bike
+header scroll state + mobile nav, scroll reveal (IntersectionObserver; content
+is only hidden once `app.js` adds `.reveal-on`, so a slow or failed script never
+leaves sections invisible), bike
 cards/grid/filters, bike & part modals, showroom strip, contact form
-(WhatsApp/mailto handoff — no backend), active-nav highlight, theme toggle,
+(inline validation, then WhatsApp/mailto handoff — no backend), active-nav highlight, theme toggle,
 and the first-visit onboarding popup (language/theme picker that animates into
 the header controls on close; flag stored as `localStorage["voltrax-onboarded"]`).
+Open dialogs make the rest of `<body>` `inert` and wrap Tab inside themselves.
+`initWaFab()` injects a floating WhatsApp button for ≤900px screens; it shows
+once the hero is scrolled past and hides while the contact form, CTA band or
+footer is on screen.
+
+**Responsive rules.** On bikes.html the sticky `.filters` bar holds only the
+chips (one swipeable row ≤900px, not sticky on short landscape phones); the
+result count and sort live in `.lineup-bar` above the grid. Touch devices
+(`pointer: coarse`) get 44px targets and ≥16px form text; hover lifts/zooms are
+disabled under `hover: none` in favour of a press state. On landscape phones
+the detail modal lays the photo beside the specs.
 
 **WhatsApp.** Every chat link goes to `wa.me/50760139903`. Dynamic
 messages (bike, part, import, contact form, onboarding discount) are built by
@@ -79,8 +102,13 @@ messages (bike, part, import, contact form, onboarding discount) are built by
 visible number and the JSON-LD `telephone` are hard-coded in the three HTML
 pages and `llms.txt` — change all of them together.
 
-**No network calls at runtime.** The only third-party request is the Google
-Fonts stylesheet (Sora + Manrope, `display=swap`, preconnected).
+**No third-party requests.** Sora and Manrope are self-hosted variable fonts
+(`assets/fonts/*-latin.woff2`, Latin subset covering Spanish, `display=swap`).
+They are intentionally not preloaded (it slowed first paint on thin
+connections); metric-matched "Sora Fallback" / "Manrope Fallback" faces keep
+the swap from shifting layout. `content-visibility` is only used on the brand
+strip and footer — on sections it broke `#anchor` jumps. The hero ships an
+extra `@1000` variant so 2–2.75× phones don't pull the 1400px file.
 
 ## Images
 

@@ -55,17 +55,57 @@
         var open = document.body.classList.toggle("nav-open");
         toggle.setAttribute("aria-expanded", String(open));
       });
+      var closeNav = function () {
+        document.body.classList.remove("nav-open");
+        toggle.setAttribute("aria-expanded", "false");
+      };
       document.querySelectorAll(".nav-mobile a").forEach(function (a) {
-        a.addEventListener("click", function () {
-          document.body.classList.remove("nav-open");
-          toggle.setAttribute("aria-expanded", "false");
-        });
+        a.addEventListener("click", closeNav);
+      });
+      document.addEventListener("keydown", function (e) {
+        if (e.key === "Escape" && document.body.classList.contains("nav-open")) { closeNav(); toggle.focus(); }
       });
     }
     document.querySelectorAll(".lang-toggle button").forEach(function (b) {
       b.addEventListener("click", function () { i18n.setLang(b.dataset.lang); });
       b.setAttribute("aria-pressed", String(b.dataset.lang === i18n.lang));
     });
+  }
+
+  /* ------------------------------------------------ floating WhatsApp */
+  /* phones/tablets only (CSS hides it on desktop). Appears once the hero's own
+     CTAs are behind you, and steps aside wherever a WhatsApp action is already
+     on screen (contact form, CTA band, footer) so it never covers one. */
+  function initWaFab() {
+    var fab = el("a", "btn btn--primary wa-fab",
+      ICON.wa + '<span data-i18n="cta.whatsapp">' + i18n.t("cta.whatsapp") + "</span>");
+    fab.href = "https://wa.me/" + WA_NUMBER;
+    fab.target = "_blank";
+    fab.rel = "noopener";
+    document.body.appendChild(fab);
+
+    var hero = document.querySelector(".hero, .page-hero");
+    var past = false, covered = 0, limit = 400;
+    var measure = function () { if (hero) limit = hero.offsetTop + hero.offsetHeight * 0.75; };
+    measure();
+    window.addEventListener("resize", measure, { passive: true });
+    var update = function () { fab.classList.toggle("is-shown", past && covered === 0); };
+    var onScroll = function () {
+      var now = window.scrollY > limit;
+      if (now !== past) { past = now; update(); }
+    };
+    onScroll();
+    window.addEventListener("scroll", onScroll, { passive: true });
+
+    if (!("IntersectionObserver" in window)) return;
+    var io = new IntersectionObserver(function (entries) {
+      entries.forEach(function (e) {
+        var was = e.target._fabCover === true;
+        if (e.isIntersecting !== was) { covered += e.isIntersecting ? 1 : -1; e.target._fabCover = e.isIntersecting; }
+      });
+      update();
+    });
+    document.querySelectorAll("#inquiryForm, .cta-band, .site-footer").forEach(function (n) { io.observe(n); });
   }
 
   /* -------------------------------------------------------------- reveal */
@@ -75,12 +115,20 @@
       items.forEach(function (i) { i.classList.add("in"); });
       return;
     }
+    // anything already in view stays put; only below-the-fold content is hidden,
+    // and only now that this script has actually arrived
+    var vh = window.innerHeight;
+    items.forEach(function (i) {
+      var r = i.getBoundingClientRect();
+      if (r.top < vh && r.bottom > 0) i.classList.add("in");
+    });
+    document.documentElement.classList.add("reveal-on");
     var io = new IntersectionObserver(function (entries) {
       entries.forEach(function (e) {
         if (e.isIntersecting) { e.target.classList.add("in"); io.unobserve(e.target); }
       });
     }, { threshold: 0.14, rootMargin: "0px 0px -8% 0px" });
-    items.forEach(function (i) { io.observe(i); });
+    items.forEach(function (i) { if (!i.classList.contains("in")) io.observe(i); });
   }
 
   /* observe newly injected reveal nodes */
@@ -111,13 +159,16 @@
     return '<span class="badge badge--import"><span class="dot"></span>' + i18n.t("badge.import") + "</span>";
   }
 
-  function bikeCard(bike) {
+  /* eager = card sits in the first viewport (bikes page), so its photo is the
+     LCP element: don't lazy-load it, and hint the very first one as high priority */
+  function bikeCard(bike, eager) {
     var badge = availBadge(bike);
     var card = el("article", "bike-card" + (bike.availability === "out-of-stock" ? " is-out" : "") + " reveal");
     card.innerHTML =
       '<div class="bike-card__stage">' +
         '<div class="bike-card__badges">' + badge + "</div>" +
-        '<img class="bike-card__img" loading="lazy" decoding="async" width="800" height="516" ' +
+        '<img class="bike-card__img" ' + (eager ? 'loading="eager"' + (eager === 1 ? ' fetchpriority="high"' : "") : 'loading="lazy"') +
+          ' decoding="async" width="800" height="516" ' +
           'src="' + IMG + "bikes/" + bike.img + '@800.webp"' +
           ' srcset="' + IMG + "bikes/" + bike.img + "@500.webp 500w, " + IMG + "bikes/" + bike.img + '@800.webp 800w"' +
           ' sizes="(max-width: 420px) 92vw, (max-width: 900px) 46vw, 30vw"' +
@@ -187,7 +238,7 @@
       grid.appendChild(el("div", "empty-state", i18n.t("bikespage.empty")));
     } else {
       list.forEach(function (b, i) {
-        var c = bikeCard(b);
+        var c = bikeCard(b, i < 2 ? i + 1 : 0);
         c.setAttribute("data-delay", String((i % 3) + 1));
         grid.appendChild(c);
       });
@@ -234,6 +285,26 @@
     if (sortSel) sortSel.addEventListener("change", function () { bikeState.sort = sortSel.value; renderBikesPage(); });
   }
 
+  /* ------------------------------------------------------ dialog helpers */
+  /* everything outside an open dialog goes inert: no tabbing or reading
+     behind the scrim. Tab is also wrapped for browsers without inert. */
+  function setBackgroundInert(dialog, on) {
+    Array.prototype.forEach.call(document.body.children, function (n) {
+      if (n === dialog || n.tagName === "SCRIPT") return;
+      if (on) n.setAttribute("inert", ""); else n.removeAttribute("inert");
+    });
+  }
+  function trapTab(dialog, e) {
+    if (e.key !== "Tab") return;
+    var f = Array.prototype.filter.call(
+      dialog.querySelectorAll('a[href], button:not([disabled]), input, select, textarea, [tabindex]:not([tabindex="-1"])'),
+      function (n) { return n.offsetParent !== null; });
+    if (!f.length) return;
+    var first = f[0], last = f[f.length - 1];
+    if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+    else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+  }
+
   /* --------------------------------------------------------------- modal */
   var lastFocus = null;
   function buildModal() {
@@ -246,7 +317,7 @@
     m.innerHTML =
       '<div class="modal__scrim" data-close></div>' +
       '<div class="modal__panel">' +
-        '<button class="modal__close" data-close aria-label="Close">' + ICON.close + "</button>" +
+        '<button class="modal__close" type="button" data-close data-i18n-attr="aria-label:modal.close" aria-label="' + i18n.t("modal.close") + '">' + ICON.close + "</button>" +
         '<div class="modal__grid">' +
           '<div class="modal__media"><img id="modalImg" alt="" width="800" height="516"></div>' +
           '<div class="modal__body" id="modalBody"></div>' +
@@ -255,6 +326,15 @@
     document.body.appendChild(m);
     m.addEventListener("click", function (e) { if (e.target.closest("[data-close]")) closeModal(); });
     document.addEventListener("keydown", function (e) { if (e.key === "Escape") closeModal(); });
+    m.addEventListener("keydown", function (e) { trapTab(m, e); });
+  }
+
+  function showModal(m) {
+    if (!m.classList.contains("is-open")) lastFocus = document.activeElement;
+    m.classList.add("is-open");
+    setBackgroundInert(m, true);
+    document.body.style.overflow = "hidden";
+    m.querySelector(".modal__close").focus();
   }
 
   function openBikeModal(id) {
@@ -263,7 +343,10 @@
     buildModal();
     var m = document.getElementById("bikeModal");
     var img = document.getElementById("modalImg");
-    img.src = IMG + "bikes/" + bike.img + ".webp";
+    var base = IMG + "bikes/" + bike.img;
+    img.sizes = "(max-width: 900px) 94vw, 500px";
+    img.srcset = base + "@500.webp 500w, " + base + "@800.webp 800w, " + base + ".webp 1400w";
+    img.src = base + "@800.webp";
     img.alt = pick(bike.imgAlt);
 
     var badge = bike.availability === "in-stock"
@@ -299,10 +382,7 @@
       "</div>";
 
     m.querySelector(".modal__panel").classList.remove("modal--part");
-    lastFocus = document.activeElement;
-    m.classList.add("is-open");
-    document.body.style.overflow = "hidden";
-    m.querySelector(".modal__close").focus();
+    showModal(m);
     m.dataset.bikeId = id;
     m.dataset.partId = "";
   }
@@ -311,8 +391,9 @@
     var m = document.getElementById("bikeModal");
     if (!m || !m.classList.contains("is-open")) return;
     m.classList.remove("is-open");
+    setBackgroundInert(m, false);
     document.body.style.overflow = "";
-    if (lastFocus) lastFocus.focus();
+    if (lastFocus && document.contains(lastFocus)) lastFocus.focus();
   }
 
   /* click delegation for spec buttons (works for injected cards) */
@@ -373,11 +454,14 @@
     var m = document.getElementById("bikeModal");
     var img = document.getElementById("modalImg");
     var shots = partImages(p);
+    img.removeAttribute("srcset");
+    img.removeAttribute("sizes");
     img.src = shots[0].full;
     img.alt = pick(p.name);
 
     var thumbs = shots.length < 2 ? "" : shots.map(function (s, i) {
-      return '<button class="pthumb' + (i === 0 ? " is-on" : "") + '" data-src="' + s.full + '">' +
+      return '<button type="button" class="pthumb' + (i === 0 ? " is-on" : "") + '" data-src="' + s.full + '"' +
+        ' aria-pressed="' + (i === 0) + '" aria-label="' + i18n.t("modal.photo") + " " + (i + 1) + '">' +
         '<img loading="lazy" decoding="async" src="' + s.thumb + '" alt=""></button>';
     }).join("");
 
@@ -391,10 +475,7 @@
       "</div>";
 
     m.querySelector(".modal__panel").classList.add("modal--part");
-    lastFocus = document.activeElement;
-    m.classList.add("is-open");
-    document.body.style.overflow = "hidden";
-    m.querySelector(".modal__close").focus();
+    showModal(m);
     m.dataset.bikeId = "";
     m.dataset.partId = id;
   }
@@ -405,7 +486,10 @@
     if (!t) return;
     var img = document.getElementById("modalImg");
     if (img) img.src = t.getAttribute("data-src");
-    t.parentNode.querySelectorAll(".pthumb").forEach(function (b) { b.classList.toggle("is-on", b === t); });
+    t.parentNode.querySelectorAll(".pthumb").forEach(function (b) {
+      b.classList.toggle("is-on", b === t);
+      b.setAttribute("aria-pressed", String(b === t));
+    });
   });
 
   document.addEventListener("click", function (e) {
@@ -495,8 +579,54 @@
     };
     populate();
 
+    /* inline errors: named per field, cleared as soon as the field is fixed */
+    var checks = {
+      name_: function (v) { return v.length >= 2 ? "" : "form.errName"; },
+      contact_: function (v) {
+        var email = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v);
+        var phone = (v.match(/\d/g) || []).length >= 7;
+        return email || phone ? "" : (v ? "form.errContactFormat" : "form.errContact");
+      }
+    };
+    function validate(name, show) {
+      var input = form[name];
+      var key = checks[name]((input.value || "").trim());
+      var field = input.closest(".field");
+      var msg = field.querySelector(".field-error");
+      if (!msg) {
+        msg = el("p", "field-error");
+        msg.id = input.id + "-err";
+        msg.setAttribute("aria-live", "polite");
+        field.appendChild(msg);
+      }
+      if (key && show) {
+        msg.setAttribute("data-i18n", key);
+        msg.textContent = i18n.t(key);
+        field.classList.add("is-invalid");
+        input.setAttribute("aria-invalid", "true");
+        input.setAttribute("aria-describedby", msg.id);
+      } else if (!key) {
+        field.classList.remove("is-invalid");
+        input.removeAttribute("aria-invalid");
+        input.removeAttribute("aria-describedby");
+        msg.removeAttribute("data-i18n");
+        msg.textContent = "";
+      }
+      return !key;
+    }
+    Object.keys(checks).forEach(function (name) {
+      form[name].addEventListener("input", function () {
+        if (form[name].closest(".field").classList.contains("is-invalid")) validate(name, true);
+      });
+      form[name].addEventListener("blur", function () {
+        if (form[name].value.trim()) validate(name, true);
+      });
+    });
+
     form.addEventListener("submit", function (e) {
       e.preventDefault();
+      var bad = Object.keys(checks).filter(function (n) { return !validate(n, true); });
+      if (bad.length) { form[bad[0]].focus(); return; }
       var name = (form.name_.value || "").trim();
       var contact = (form.contact_.value || "").trim();
       var interestSel = form.interest;
@@ -510,7 +640,9 @@
            "Name: " + name, "Contact: " + contact, "Interested in: " + interest, "Message: " + message];
       var body = lines.filter(function (l) { return l.indexOf(": ") === -1 || l.split(": ")[1]; }).join("\n");
 
-      window.open(waLink(body), "_blank", "noopener");
+      // popup blocked (common in in-app browsers): open WhatsApp in this tab instead
+      var win = window.open(waLink(body), "_blank", "noopener");
+      if (!win) location.href = waLink(body);
     });
 
     var emailBtn = document.getElementById("emailInstead");
@@ -611,6 +743,7 @@
         card.classList.remove("is-leaving");
         card.style.transition = ""; card.style.transform = ""; card.style.opacity = "";
       }
+      setBackgroundInert(pop, false);
       document.body.style.overflow = "";
       hintHeaderControls();
     };
@@ -660,16 +793,22 @@
       if (e.key === "Escape" && pop.classList.contains("is-open")) closeOnboard(pop);
     });
 
+    pop.addEventListener("keydown", function (e) { trapTab(pop, e); });
+
     syncOnboard(pop);
     pop.classList.add("is-open");
+    setBackgroundInert(pop, true);
     document.body.style.overflow = "hidden";
-    var firstBtn = pop.querySelector("[data-onboard-lang]");
-    if (firstBtn) { try { firstBtn.focus(); } catch (e) {} }
+    // focus the card itself: keeps keyboard/screen-reader context inside the
+    // dialog without a focus ring on "Español" that reads like an error
+    var card = pop.querySelector(".onboard__card");
+    if (card) { card.setAttribute("tabindex", "-1"); try { card.focus({ preventScroll: true }); } catch (e) {} }
   }
 
   /* --------------------------------------------------------------- boot */
   function boot() {
     initHeader();
+    initWaFab();
     initActiveNav();
     decorateWhyIcons();
     renderFeatured();
